@@ -46,7 +46,7 @@
     ; discard the rest of the header
     (regexp-match #rx"(\r\n|^)\r\n" in)
     ; dispatch
-    (let ([xexpr (dispatch (list-ref req 1))])
+    (let ([xexpr (prompt (dispatch (list-ref req 1)))])
       ; send reply
         (display "HTTP/1.0 200 Okay\r\n" out)
         (display "Server: k\r\nContent-type: text/html\r\n\r\n" out)
@@ -96,3 +96,44 @@
 
 (hash-set! dispatch-table "many" many)
 (hash-set! dispatch-table "reply" reply)
+
+
+; now for some stuff about continuations
+
+(define (sum query)
+  (build-request-page "First number:" "/one" ""))
+
+(define (one query)
+  (build-request-page "Second number:"
+                      "/two"
+                      (cdr (assq 'number query))))
+
+(define (two query)
+  (let ([n (string->number (cdr (assq 'hidden query)))]
+        [m (string->number (cdr (assq 'number query)))])
+    `(html (body "The sum is " ,(number->string (+ n m))))))
+
+(define (get-number label)
+  (define query
+    ; generate a URL for our current computation
+    (send/suspend
+     ; receive computation-as-url here
+     (lambda (k-url)
+       ; generate the query-page result for this connection
+       ; send the query result to the saved-computation url
+       (build-request-page label k-url ""))))
+  ; this is later, in a new connection, somehow
+  (string->number (cdr (assq 'number query))))
+
+(define (send/suspend mk-page)
+  (let/cc k
+    (define tag (format "k~a" (current-inexact-milliseconds)))
+    (hash-set! dispatch-table tag k)
+    (abort (mk-page (string-append "/" tag)))))
+
+(define (sum2 query)
+  (define n (get-number "First number:"))
+  (define m (get-number "Second number:"))
+  `(html (body "The sum is " ,(number->string (+ n m)))))
+
+(hash-set! dispatch-table "sum2" sum2)
